@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESOGÜ Meydan</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- GunDB Açık Kaynak Dağıtık DB (Sıfır Key / Sıfır Kurulum) -->
+  <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+  <style>
+    body { background-color: #0b1120; color: #f1f5f9; font-family: system-ui, sans-serif; }
+    .tab-active { border-bottom: 2px solid #38bdf8; color: #38bdf8; }
+  </style>
+</head>
+<body class="max-w-md mx-auto min-h-screen border-x border-slate-800 pb-16">
+
+  <header class="p-4 border-b border-slate-800 sticky top-0 bg-slate-900/90 backdrop-blur z-10 flex justify-between items-center">
+    <div>
+      <h1 class="text-lg font-bold text-sky-400">ESOGÜ Meydan</h1>
+      <p class="text-[10px] text-slate-500">Kalıcı & Anonim Kampüs Portalı</p>
+    </div>
+    <span class="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded">Aktif</span>
+  </header>
+
+  <!-- Sekmeler -->
+  <nav class="flex border-b border-slate-800 text-sm font-medium text-slate-400 bg-slate-900">
+    <button onclick="switchTab('feed')" id="tab-feed" class="flex-1 py-3 text-center tab-active">Akış / İtiraf</button>
+    <button onclick="switchTab('academic')" id="tab-academic" class="flex-1 py-3 text-center">Akademi / Not</button>
+    <button onclick="switchTab('meetup')" id="tab-meetup" class="flex-1 py-3 text-center">Yoldaş</button>
+  </nav>
+
+  <main class="p-4 space-y-4">
+    <!-- 1. AKIŞ -->
+    <div id="sec-feed" class="space-y-4">
+      <div class="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-2">
+        <textarea id="feed-text" class="w-full bg-slate-950 p-2.5 rounded text-sm text-slate-200 border border-slate-800 focus:outline-none" rows="3" placeholder="Kampüs, dert veya itiraf yaz..."></textarea>
+        <div class="flex justify-between items-center">
+          <select id="feed-tag" class="bg-slate-950 text-xs text-slate-300 p-1.5 rounded border border-slate-800">
+            <option value="Dert">#Dert</option>
+            <option value="KYK">#KYK</option>
+            <option value="Meşelik">#Meşelik</option>
+            <option value="İtiraf">#İtiraf</option>
+          </select>
+          <button onclick="sendFeed()" class="bg-sky-500 hover:bg-sky-600 text-xs font-semibold px-4 py-2 rounded text-white">Gönder</button>
+        </div>
+      </div>
+      <div id="list-feed" class="space-y-3"></div>
+    </div>
+
+    <!-- 2. AKADEMİ -->
+    <div id="sec-academic" class="space-y-4 hidden">
+      <div class="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-2">
+        <input id="acad-title" type="text" placeholder="Ders Kodu / Hoca (Örn: İktisat 101)" class="w-full bg-slate-950 p-2 text-sm rounded border border-slate-800 text-slate-200">
+        <textarea id="acad-text" class="w-full bg-slate-950 p-2 text-sm rounded border border-slate-800 text-slate-200" rows="2" placeholder="Sınav tüyosu, not veya Google Drive linki..."></textarea>
+        <button onclick="sendAcademic()" class="w-full bg-sky-500 hover:bg-sky-600 text-xs font-semibold py-2 rounded text-white">Not/Tüyo Ekle</button>
+      </div>
+      <div id="list-academic" class="space-y-3"></div>
+    </div>
+
+    <!-- 3. YOLDAŞ -->
+    <div id="sec-meetup" class="space-y-4 hidden">
+      <div class="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-2">
+        <input id="meet-title" type="text" placeholder="Aktivite / İhtiyaç (Örn: Kütüphanede masa arkadaşı)" class="w-full bg-slate-950 p-2 text-sm rounded border border-slate-800 text-slate-200">
+        <input id="meet-contact" type="text" placeholder="İletişim (Telegram @kullanici veya IG linki)" class="w-full bg-slate-950 p-2 text-sm rounded border border-slate-800 text-slate-200">
+        <button onclick="sendMeetup()" class="w-full bg-sky-500 hover:bg-sky-600 text-xs font-semibold py-2 rounded text-white">İlan Bırak</button>
+      </div>
+      <div id="list-meetup" class="space-y-3"></div>
+    </div>
+  </main>
+
+  <script>
+    // Açık kaynak Gun relay sunucusu (Kayıt, key veya hesap yok)
+    const gun = Gun(['https://gun-manhattan.herokuapp.com/gun', 'https://relay.peer.ooo/gun']);
+    
+    // Uygulamanın veritabanı düğümleri
+    const feedDb = gun.get('esogu_meydan_feed_v1');
+    const acadDb = gun.get('esogu_meydan_acad_v1');
+    const meetDb = gun.get('esogu_meydan_meet_v1');
+
+    function switchTab(tab) {
+      ['feed', 'academic', 'meetup'].forEach(t => {
+        document.getElementById('sec-' + t).classList.add('hidden');
+        document.getElementById('tab-' + t).classList.remove('tab-active');
+      });
+      document.getElementById('sec-' + tab).classList.remove('hidden');
+      document.getElementById('tab-' + tab).classList.add('tab-active');
+    }
+
+    // 1. AKIŞ
+    function sendFeed() {
+      const text = document.getElementById('feed-text').value.trim();
+      const tag = document.getElementById('feed-tag').value;
+      if (!text) return;
+
+      const id = 'f_' + Date.now();
+      feedDb.get(id).put({
+        id: id,
+        text: text,
+        tag: tag,
+        time: Date.now(),
+        likes: 0
+      });
+      document.getElementById('feed-text').value = '';
+    }
+
+    function likeFeed(id) {
+      feedDb.get(id).once((data) => {
+        if (data) {
+          feedDb.get(id).get('likes').put((data.likes || 0) + 1);
+        }
+      });
+    }
+
+    const feedCache = {};
+    feedDb.map().on((data, id) => {
+      if (!data || !data.text) return;
+      feedCache[id] = data;
+      renderFeed();
+    });
+
+    function renderFeed() {
+      const list = document.getElementById('list-feed');
+      const sorted = Object.values(feedCache).sort((a, b) => b.time - a.time);
+      list.innerHTML = sorted.map(item => `
+        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-800 space-y-2">
+          <div class="flex justify-between items-center text-xs text-slate-500">
+            <span class="text-sky-400 font-medium">#${item.tag}</span>
+            <span>${new Date(item.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+          </div>
+          <p class="text-sm text-slate-200 leading-relaxed">${escape(item.text)}</p>
+          <div class="flex justify-end">
+            <button onclick="likeFeed('${item.id}')" class="text-xs bg-slate-950 border border-slate-800 px-2.5 py-1 rounded text-slate-400 hover:text-sky-400">
+              ▲ ${item.likes || 0}
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 2. AKADEMİ
+    function sendAcademic() {
+      const title = document.getElementById('acad-title').value.trim();
+      const text = document.getElementById('acad-text').value.trim();
+      if (!title || !text) return;
+
+      const id = 'a_' + Date.now();
+      acadDb.get(id).put({
+        id: id,
+        title: title,
+        text: text,
+        time: Date.now()
+      });
+      document.getElementById('acad-title').value = '';
+      document.getElementById('acad-text').value = '';
+    }
+
+    const acadCache = {};
+    acadDb.map().on((data, id) => {
+      if (!data || !data.title) return;
+      acadCache[id] = data;
+      renderAcademic();
+    });
+
+    function renderAcademic() {
+      const list = document.getElementById('list-academic');
+      const sorted = Object.values(acadCache).sort((a, b) => b.time - a.time);
+      list.innerHTML = sorted.map(item => `
+        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-800 space-y-1">
+          <h3 class="text-sm font-semibold text-sky-400">${escape(item.title)}</h3>
+          <p class="text-xs text-slate-300 whitespace-pre-wrap">${escape(item.text)}</p>
+        </div>
+      `).join('');
+    }
+
+    // 3. YOLDAŞ
+    function sendMeetup() {
+      const title = document.getElementById('meet-title').value.trim();
+      const contact = document.getElementById('meet-contact').value.trim();
+      if (!title || !contact) return;
+
+      const id = 'm_' + Date.now();
+      meetDb.get(id).put({
+        id: id,
+        title: title,
+        contact: contact,
+        time: Date.now()
+      });
+      document.getElementById('meet-title').value = '';
+      document.getElementById('meet-contact').value = '';
+    }
+
+    const meetCache = {};
+    meetDb.map().on((data, id) => {
+      if (!data || !data.title) return;
+      meetCache[id] = data;
+      renderMeetup();
+    });
+
+    function renderMeetup() {
+      const list = document.getElementById('list-meetup');
+      const sorted = Object.values(meetCache).sort((a, b) => b.time - a.time);
+      list.innerHTML = sorted.map(item => `
+        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-800 flex justify-between items-center">
+          <div>
+            <p class="text-sm font-medium text-slate-200">${escape(item.title)}</p>
+            <span class="text-xs text-slate-400">İletişim: <b class="text-sky-400">${escape(item.contact)}</b></span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function escape(str) {
+      return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+  </script>
+</body>
+</html>
